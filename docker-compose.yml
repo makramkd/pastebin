@@ -1,0 +1,59 @@
+version: '3.7'
+
+services:
+  pastebin:
+    build: .
+    environment:
+      MINIO_ADDR: 'pastebin_minio'
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: 'dev_access_key'
+      MINIO_SECRET_KEY: 'dev_secret_key'
+      PSQL_DSN: 'postgres://pastebin_rw:devsecret@pastebin_pg:5432/pastebin?sslmode=disable'
+      REDIS_HOST: 'pastebin_redis'
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+    ports:
+    - "8000:8000"
+    volumes:
+    - .:/code
+    links:
+    - redis
+    - pg
+    - minio
+    depends_on:
+    - redis
+    - pg
+    - minio
+
+  redis:
+    image: redis:5.0.8-alpine
+    hostname: pastebin_redis
+    container_name: pastebin_redis
+    ports:
+    - "6379:6379"
+
+  pg:
+    build: ./db
+    ports:
+    - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      TZ: US/Eastern
+    hostname: pastebin_pg
+    container_name: pastebin_pg
+    volumes:
+    - ./postgres-data:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:RELEASE.2020-03-25T07-03-04Z
+    command: server /data
+    ports:
+    - "9000:9000"
+    environment:
+      MINIO_ACCESS_KEY: 'dev_access_key'
+      MINIO_SECRET_KEY: 'dev_secret_key'
+    volumes:
+    - ./minio-data:/data
+    container_name: pastebin_minio
+    hostname: pastebin_minio
