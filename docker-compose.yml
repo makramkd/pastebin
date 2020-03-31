@@ -25,12 +25,28 @@ services:
     - pg
     - minio
 
+  pastebin_subscriber:
+    build: .
+    environment:
+      PSQL_DSN: 'postgres://pastebin_rw:devsecret@pastebin_pg:5432/pastebin?sslmode=disable'
+      REDIS_HOST: 'pastebin_redis'
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+    depends_on:
+    - redis
+    - pg
+    - minio
+    command: pastebin_subscriber
+
   redis:
     image: redis:5.0.8-alpine
     hostname: pastebin_redis
     container_name: pastebin_redis
+    command: redis-server --appendonly yes --notify-keyspace-events Ex
     ports:
     - "6379:6379"
+    volumes:
+    - ./redis-data:/data
 
   pg:
     build: ./db
