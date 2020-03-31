@@ -81,5 +81,7 @@ has passed.
 
 # Still To Do
 
-* Implement paste expiry using Redis queues
+* Implement paste expiry using Redis queues (DONE)
 * Unit tests of async behavior
+* Integration tests of system
+* Add docstrings to API, classes, and functions
