@@ -29,6 +29,7 @@ setup(
     entry_points={
         'console_scripts': [
             'pastebin=pastebin.app:main',
+            'pastebin_subscriber=pastebin.subscriber:subscriber_main',
         ]
     }
 )

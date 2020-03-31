@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from logging import Logger
 from io import BytesIO
 
@@ -6,6 +6,7 @@ from redis import Redis
 from minio import Minio
 import dateutil.parser
 from sanic.response import json as sanic_json
+from sanic.request import Request
 from sanic.exceptions import ServerError
 
 from pastebin.helpers import (
@@ -27,7 +28,7 @@ class Pastebin:
         self.bucket_name = bucket_name
         self.logger = logger
 
-    async def create_paste(self, request):
+    async def create_paste(self, request: Request):
         # Request validation
         if not request.json:
             raise ServerError("Request content type must be JSON", status_code=400)
@@ -37,47 +38,66 @@ class Pastebin:
         paste_data_len = len(request.json['paste_content'])
         paste_data = BytesIO(request.json['paste_content'].encode('utf-8'))
 
-        # TODO: figure out a better way to handle a nullable expiration date
-        expiration_date = 'null'
-        if 'expiration' in request.json:
-            try:
-                expiration_date = dateutil.parser.parse(request.json['expiration'])
-                expiration_date = f"'{expiration_date}'::TIMESTAMPTZ"
-            except dateutil.parser.ParserError:
-                raise ServerError(f"Unable to parse given date: {request.json['expiration']}", status_code=400)
-
         created_at = updated_at = datetime.now()
+
+        expiration_date_sql = None
+        if 'time_to_live' in request.json:
+            if not isinstance(request.json['time_to_live'], int):
+                raise ServerError("Key 'time_to_live' must be an integer", status_code=400)
+
+            expiration_date = datetime.now() + timedelta(seconds=request.json['time_to_live'])
+            expiration_date_sql = f"'{expiration_date}'::TIMESTAMPTZ"
 
         # Generate the shortlink to insert into the DB and object store
         shortlink = generate_shortlink()
         async with self.psql_client.transaction():
-            self.minio_client.put_object(
-                bucket_name=self.bucket_name,
-                object_name=shortlink,
-                data=paste_data,
-                length=paste_data_len,
-                content_type='text/plain',
-            )
-            await self.psql_client.execute(
-                """
-                INSERT INTO pastes VALUES (
-                    '{shortlink}',
-                    '{paste_content_link}',
-                    {expired},
-                    {expiration_date},
-                    '{created_at}'::TIMESTAMPTZ,
-                    '{updated_at}'::TIMESTAMPTZ
-                );
-                """.format(
-                    shortlink=shortlink,
-                    paste_content_link=format_paste_path(shortlink, self.bucket_name),
-                    expired='false',
-                    expiration_date=expiration_date,
-                    created_at=created_at,
-                    updated_at=updated_at,
+            etag = None
+            try:
+                etag = self.minio_client.put_object(
+                    bucket_name=self.bucket_name,
+                    object_name=shortlink,
+                    data=paste_data,
+                    length=paste_data_len,
+                    content_type='text/plain',
                 )
-            )
-            return sanic_json({'created': 'true', 'shortlink': shortlink})
+                await self.psql_client.execute(
+                    """
+                    INSERT INTO pastes VALUES (
+                        '{shortlink}',
+                        '{paste_content_link}',
+                        {expired},
+                        {expiration_date},
+                        '{created_at}'::TIMESTAMPTZ,
+                        '{updated_at}'::TIMESTAMPTZ
+                    );
+                    """.format(
+                        shortlink=shortlink,
+                        paste_content_link=format_paste_path(shortlink, self.bucket_name),
+                        expired='false',
+                        expiration_date=expiration_date_sql if expiration_date_sql else 'null',
+                        created_at=created_at,
+                        updated_at=updated_at,
+                    )
+                )
+
+                # If an expiration date is provided set that in redis so that we
+                # can correctly mark the paste as expired in postgres.
+                if 'time_to_live' in request.json:
+                    self.redis_client.set(
+                        shortlink,
+                        'shortlink',
+                        ex=int(request.json['time_to_live']),
+                    )
+
+                return sanic_json({'created': 'true', 'shortlink': shortlink})
+            except Exception as e:
+                self.logger.exception(f'Got exception: {e}')
+                if etag:
+                    self.minio_client.remove_object(
+                        bucket_name=self.bucket_name,
+                        object_name=shortlink,
+                    )
+                raise ServerError('Encountered an error while creating paste', status_code=500)
 
     async def get_paste(self, request, shortlink):
         query = """
