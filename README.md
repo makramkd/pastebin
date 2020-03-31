@@ -71,15 +71,15 @@ Create a new paste. The request body must be JSON, with the following form:
 ```javascript
 {
   "paste_content": "string",
-  "expiration": "datetime-string", // optional, defaults to never expire
+  "time_to_live": 12345, // optional, time to live of the paste in seconds
 }
 ```
 
-If an expiration date is given then the content will not be available for viewing after
-the given date. If it is not given, the content will never expire and remain available for
-viewing forever.
+If a time to live isn't given the paste will never expire. Otherwise, the paste
+will be set to expired - and will no longer be accessible - after the specified time
+has passed.
 
 # Still To Do
 
-*Implement paste expiry using Redis queues
-*Unit tests of async behavior
+* Implement paste expiry using Redis queues
+* Unit tests of async behavior
