@@ -9,4 +9,6 @@ create table pastes(
     updated_at timestamptz
 );
 
+insert into schema_migrations values ('001_create_pastes');
+
 commit;
