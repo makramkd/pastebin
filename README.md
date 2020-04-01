@@ -5,6 +5,10 @@ see [pastebin.com](https://pastebin.com/).
 
 This is mostly done for learning and fun. It isn't production ready!
 
+# Architecture Diagram
+
+![](arch_diagram.png)
+
 # Building
 
 You can build everything using [Docker](https://www.docker.com/).
